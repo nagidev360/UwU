@@ -142,3 +142,17 @@ begin
  return true;
 exception when others then raise;
 end; $$;
+
+
+create or replace function uwu_add_item(p_user text,p_item text,p_quantity integer)
+returns integer language plpgsql as $$
+declare v_qty integer;
+begin
+ if p_quantity<=0 then raise exception 'INVALID_QUANTITY'; end if;
+ insert into inventory(discord_user_id,item_id,quantity)
+ values(p_user,p_item,p_quantity)
+ on conflict(discord_user_id,item_id)
+ do update set quantity=inventory.quantity+excluded.quantity
+ returning quantity into v_qty;
+ return v_qty;
+end; $$;
