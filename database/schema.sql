@@ -66,3 +66,79 @@ insert into catalog_items(id,kind,name,emoji,rarity,sell_price,xp) values
 ('unicorn','animal','Unicorn','🦄','Mythic',100000,1000),
 ('celestial','animal','Celestial','✨','Divine',500000,2500)
 on conflict(id) do nothing;
+
+-- UWU expansion: persistent drops, achievements, equipment, and atomic wallet operations.
+create table if not exists cash_drops (
+ id bigint generated always as identity primary key,
+ guild_id text,
+ creator_user_id text not null references users(discord_user_id) on delete cascade,
+ amount bigint not null check(amount>0),
+ max_claims integer not null default 1 check(max_claims>0),
+ claimed_count integer not null default 0 check(claimed_count>=0),
+ expires_at timestamptz not null,
+ active boolean not null default true,
+ created_at timestamptz not null default now()
+);
+create table if not exists cash_drop_claims (
+ drop_id bigint references cash_drops(id) on delete cascade,
+ discord_user_id text references users(discord_user_id) on delete cascade,
+ amount bigint not null check(amount>0),
+ claimed_at timestamptz not null default now(),
+ primary key(drop_id,discord_user_id)
+);
+create table if not exists achievements (
+ id text primary key,
+ name text not null,
+ description text not null,
+ reward bigint not null default 0 check(reward>=0),
+ xp integer not null default 0 check(xp>=0)
+);
+create table if not exists user_achievements (
+ discord_user_id text references users(discord_user_id) on delete cascade,
+ achievement_id text references achievements(id) on delete cascade,
+ unlocked_at timestamptz not null default now(),
+ primary key(discord_user_id,achievement_id)
+);
+alter table inventory add column if not exists equipped boolean not null default false;
+create index if not exists idx_cash_drops_active on cash_drops(active,expires_at);
+create index if not exists idx_drop_claims_user on cash_drop_claims(discord_user_id);
+
+insert into catalog_items(id,kind,name,emoji,rarity,sell_price,xp,metadata) values
+('shadow_blade','weapon','Shadow Blade','🗡️','Epic',8000,100,'{"power":75}'),
+('dragon_sword','weapon','Dragon Sword','⚔️','Legendary',30000,350,'{"power":150}'),
+('void_spear','weapon','Void Spear','🔱','Mythic',75000,800,'{"power":300}'),
+('phoenix_bow','weapon','Phoenix Bow','🏹','Mythic',100000,1000,'{"power":400}'),
+('arcane_staff','weapon','Arcane Staff','🪄','Legendary',45000,500,'{"power":220}'),
+('divine_blade','weapon','Divine Blade','✨','Divine',250000,2500,'{"power":750}')
+on conflict(id) do nothing;
+
+insert into achievements(id,name,description,reward,xp) values
+('first_start','First Steps','Activate your UWU account.',100,25),
+('rich_10k','Pocket Change','Reach 10,000 wallet cash.',500,50),
+('rich_1m','Millionaire','Reach 1,000,000 wallet cash.',10000,500),
+('collector_5','Collector','Own 5 different catalog items.',1000,100),
+('hunter_10','Hunter','Complete 10 successful hunts.',2500,150)
+on conflict(id) do nothing;
+
+create or replace function uwu_change_balance(p_user text,p_delta bigint,p_type text,p_metadata jsonb default '{}'::jsonb)
+returns bigint language plpgsql as $$
+declare v_balance bigint;
+begin
+ update users set balance=balance+p_delta,updated_at=now()
+ where discord_user_id=p_user and disabled=false and balance+p_delta>=0
+ returning balance into v_balance;
+ if not found then raise exception 'INSUFFICIENT_OR_DISABLED'; end if;
+ insert into transactions(discord_user_id,type,amount,metadata) values(p_user,p_type,p_delta,coalesce(p_metadata,'{}'::jsonb));
+ return v_balance;
+end; $$;
+
+create or replace function uwu_transfer(p_from text,p_to text,p_amount bigint,p_type text default 'transfer')
+returns boolean language plpgsql as $$
+begin
+ if p_amount<=0 or p_from=p_to then raise exception 'INVALID_TRANSFER'; end if;
+ if not exists(select 1 from users where discord_user_id=p_to and disabled=false) then raise exception 'TARGET_DISABLED_OR_MISSING'; end if;
+ perform uwu_change_balance(p_from,-p_amount,p_type||'_out','{}');
+ perform uwu_change_balance(p_to,p_amount,p_type||'_in','{}');
+ return true;
+exception when others then raise;
+end; $$;
