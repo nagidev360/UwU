@@ -1,0 +1,23 @@
+services:
+  - type: worker
+    name: uwu
+    runtime: node
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: BOT_OWNER_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PREFIX
+        value: UwU
+      - key: STARTING_BALANCE
+        value: "1000"
+      - key: MAX_CF_BET
+        value: "500000"
